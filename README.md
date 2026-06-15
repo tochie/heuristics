@@ -1,3 +1,13 @@
+---
+title: UX Review Assistant
+emoji: 🔎
+colorFrom: orange
+colorTo: gray
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # UX Review Assistant (demo)
 
 A minimal web app: enter a website URL, and Claude (Sonnet 4) reviews it against

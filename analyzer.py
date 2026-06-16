@@ -16,7 +16,7 @@ from anthropic import AsyncAnthropic
 from rubric import METRICS, CONFIDENCE_RULES, weighted_overall
 
 # Default model. Override with the MODEL env var if needed.
-DEFAULT_MODEL = "claude-3-haiku-20240307"
+DEFAULT_MODEL = "claude-haiku-4-5"
 
 # Keep the prompt within sane token bounds for a demo.
 MAX_HTML_CHARS = 120_000

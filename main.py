@@ -28,9 +28,9 @@ from analyzer import analyze
 
 load_dotenv()  # read .env into the environment, like dotenv in Node
 
-# Cheapest model. Override anytime by setting a MODEL variable on the Space
-# (e.g. claude-haiku-4-5 for better quality, or claude-sonnet-4-6) — no redeploy.
-MODEL = os.environ.get("MODEL", "claude-3-haiku-20240307")
+# Cheap, current Haiku. Override anytime by setting a MODEL variable on the
+# Space (e.g. claude-sonnet-4-6 for top quality) — no redeploy needed.
+MODEL = os.environ.get("MODEL", "claude-haiku-4-5")
 PORT = int(os.environ.get("PORT", "8000"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 

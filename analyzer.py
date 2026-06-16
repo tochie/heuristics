@@ -15,8 +15,8 @@ from anthropic import AsyncAnthropic
 
 from rubric import METRICS, CONFIDENCE_RULES, weighted_overall
 
-# Sonnet 4 generation. Override with the MODEL env var if needed.
-DEFAULT_MODEL = "claude-sonnet-4-6"
+# Default model. Override with the MODEL env var if needed.
+DEFAULT_MODEL = "claude-3-haiku-20240307"
 
 # Keep the prompt within sane token bounds for a demo.
 MAX_HTML_CHARS = 120_000

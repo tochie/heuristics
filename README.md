@@ -1,5 +1,5 @@
 ---
-title: UX Review Assistant
+title: UX Research - Review Assistant
 emoji: 🔎
 colorFrom: yellow
 colorTo: gray
@@ -8,9 +8,9 @@ app_port: 7860
 pinned: false
 ---
 
-# UX Review Assistant (demo)
+# UX Research - Review Assistant (demo)
 
-A minimal web app: enter a website URL, and Claude (Sonnet 4) reviews it against
+A minimal web app: enter a website URL, and Claude reviews it against
 a fixed UX heuristic rubric — returning per-metric scores, confidence-rated
 evidence, an overall weighted score, strengths, issues, and recommendations.
 

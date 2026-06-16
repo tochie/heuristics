@@ -1,7 +1,7 @@
 ---
 title: UX Review Assistant
 emoji: 🔎
-colorFrom: orange
+colorFrom: yellow
 colorTo: gray
 sdk: docker
 app_port: 7860

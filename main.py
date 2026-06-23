@@ -70,8 +70,20 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+# Set to True to re-enable live analysis (LLM calls). Kept off to avoid
+# spending Anthropic credits on the public demo.
+ANALYSIS_ENABLED = False
+
+
 @app.post("/api/analyze")
 async def api_analyze(req: AnalyzeRequest, request: Request):
+    if not ANALYSIS_ENABLED:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "This demo is paused — live analysis is "
+                              "temporarily disabled. Check back later."},
+        )
+
     client = app.state.anthropic
     if client is None:
         return JSONResponse(status_code=500,
@@ -96,8 +108,11 @@ async def api_analyze(req: AnalyzeRequest, request: Request):
     # ---------------------------------------------------------------------
 
     try:
-        result = await analyze(client, MODEL, req.url)
-        return result
+        # LLM call disabled to prevent token spend on the public demo.
+        # To re-enable, set ANALYSIS_ENABLED = True (above) and uncomment:
+        # result = await analyze(client, MODEL, req.url)
+        # return result
+        raise ValueError("Live analysis is temporarily disabled.")
     except ValueError as e:
         # Fetch/validation failures spend no Claude tokens — release the slot
         # so the visitor can correct the URL and retry immediately.

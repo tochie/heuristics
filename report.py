@@ -14,6 +14,21 @@ from rubric import (
     score_band,
 )
 
+def coerce_list(value):
+    """Narrative 'array' fields sometimes arrive as one string with <item>
+    tags or newlines (model quirk). Normalize to a clean list of strings."""
+    import re
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if not value:
+        return []
+    text = str(value)
+    items = re.findall(r"<item>(.*?)</item>", text, re.DOTALL)
+    if not items:
+        items = [l for l in re.split(r"[\n•]+", text)]
+    return [re.sub(r"\s+", " ", i).strip() for i in items if i.strip()]
+
+
 METHODOLOGY_SUMMARY = (
     "AI-assisted heuristic evaluation across eight weighted UX dimensions "
     "(derived from established usability principles), scored 1-10 per "
@@ -199,7 +214,7 @@ def assemble_report(inputs_meta, m2, findings, recommendations, narrative,
         for f in findings if f["validation_required"] != "none"
     ]
 
-    limitations = list(narrative.get("evaluation_limitations", []))
+    limitations = coerce_list(narrative.get("evaluation_limitations"))
     if not inputs_meta.get("has_screenshots"):
         note = ("No screenshots were provided; purely visual qualities "
                 "(rendered layout, contrast, whitespace) were not directly "
@@ -228,7 +243,7 @@ def assemble_report(inputs_meta, m2, findings, recommendations, narrative,
             "overall_ux_score": score,
             "overall_band": band,
             "overall_assessment": narrative.get("overall_assessment", ""),
-            "key_observations": narrative.get("key_observations", []),
+            "key_observations": coerce_list(narrative.get("key_observations")),
             "text": narrative.get("executive_summary", ""),
         },
         "evaluation_scope": {
@@ -259,7 +274,7 @@ def assemble_report(inputs_meta, m2, findings, recommendations, narrative,
         "evaluation_limitations": limitations,
         "conclusion": {
             "text": narrative.get("conclusion", ""),
-            "next_steps": narrative.get("next_steps", []),
+            "next_steps": coerce_list(narrative.get("next_steps")),
         },
         "severity_summary": _severity_counts(findings),
         "confidence_summary": _confidence_counts(findings),

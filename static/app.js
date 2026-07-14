@@ -26,7 +26,7 @@ form.addEventListener("submit", async (e) => {
   setBusy(true);
   resultsEl.hidden = true;
   resultsEl.innerHTML = "";
-  setStatus("Running the staged evaluation (evidence → assessment → recommendations → report)… this typically takes 1–3 minutes.", false);
+  setStatus("Starting the staged evaluation…", false);
 
   try {
     const res = await fetch("/api/analyze", {
@@ -36,7 +36,8 @@ form.addEventListener("submit", async (e) => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Something went wrong.");
-    render(data);
+    const report = await pollJob(data.job_id);
+    render(report);
     setStatus("", false);
   } catch (err) {
     setStatus(err.message || String(err), true);
@@ -44,6 +45,34 @@ form.addEventListener("submit", async (e) => {
     setBusy(false);
   }
 });
+
+const STAGES = [
+  "Analyzing evidence across the 8 dimensions…",
+  "Assessing severity and confidence per finding…",
+  "Generating prioritized recommendations…",
+  "Assembling the structured report…",
+];
+
+async function pollJob(jobId) {
+  const started = Date.now();
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 4000));
+    const elapsed = Math.round((Date.now() - started) / 1000);
+    const stage = STAGES[Math.min(Math.floor(elapsed / 35), STAGES.length - 1)];
+    setStatus(`${stage} (${elapsed}s — evaluations typically take 1–3 minutes)`, false);
+    let res;
+    try {
+      res = await fetch(`/api/analyze/${jobId}`);
+    } catch {
+      continue; // transient network blip — keep polling
+    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "The evaluation was lost.");
+    if (data.status === "done") return data.report;
+    if (data.status === "error") throw new Error(data.error);
+    if (elapsed > 420) throw new Error("The evaluation timed out. Please try again.");
+  }
+}
 
 function val(id) {
   const v = document.getElementById(id).value.trim();

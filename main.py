@@ -13,9 +13,11 @@ Run (dev):  uvicorn main:app --reload --port 8000   or   python3 main.py
 The API key stays server-side and is never sent to the browser.
 """
 
+import asyncio
 import base64
 import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -99,6 +101,37 @@ def _validate_screenshots(shots):
     return out
 
 
+# --- background jobs ---------------------------------------------------
+# The staged pipeline takes 1-3 minutes; reverse proxies (HF Spaces) kill
+# long-held requests (ERR_CONNECTION_CLOSED). So POST starts a job and
+# returns immediately; the browser polls GET /api/analyze/{job_id}.
+JOB_TTL_SECONDS = 30 * 60
+_jobs = {}  # job_id -> {status, created, report?, error?, ip}
+
+
+def _prune_jobs():
+    cutoff = time.monotonic() - JOB_TTL_SECONDS
+    for jid in [j for j, v in _jobs.items() if v["created"] < cutoff]:
+        _jobs.pop(jid, None)
+
+
+async def _run_job(job_id, inputs):
+    job = _jobs[job_id]
+    try:
+        report = await run_evaluation(app.state.anthropic, MODEL, inputs)
+        job["report"] = report
+        job["status"] = "done"
+    except (EvaluationError, ValueError) as e:
+        # Validation/fetch failures spend few-to-no tokens — release the slot.
+        _last_request.pop(job["ip"], None)
+        job["error"] = str(e)
+        job["status"] = "error"
+    except Exception as e:  # last-resort guard
+        _last_request.pop(job["ip"], None)
+        job["error"] = f"Unexpected error: {e}"
+        job["status"] = "error"
+
+
 @app.post("/api/analyze")
 async def api_analyze(req: AnalyzeRequest, request: Request):
     if not ANALYSIS_ENABLED:
@@ -107,8 +140,7 @@ async def api_analyze(req: AnalyzeRequest, request: Request):
             content={"error": "This demo is paused — live analysis is "
                               "temporarily disabled. Check back later."})
 
-    client = app.state.anthropic
-    if client is None:
+    if app.state.anthropic is None:
         return JSONResponse(status_code=500,
                             content={"error": "Server is missing ANTHROPIC_API_KEY."})
 
@@ -120,7 +152,14 @@ async def api_analyze(req: AnalyzeRequest, request: Request):
                               "observable webpage evidence. Provide a URL, "
                               "screenshots, or page content."})
 
-    # --- rate limit -------------------------------------------------------
+    # Screenshot validation is cheap and spends no tokens — do it BEFORE
+    # consuming the visitor's rate-limit slot.
+    try:
+        screenshots = _validate_screenshots(req.screenshots)
+    except EvaluationError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+    # --- rate limit (on STARTING a job; polling is never limited) ---------
     ip = client_ip(request)
     now = time.monotonic()
     last = _last_request.get(ip)
@@ -137,25 +176,32 @@ async def api_analyze(req: AnalyzeRequest, request: Request):
     _last_request[ip] = now
     # ---------------------------------------------------------------------
 
-    try:
-        inputs = {
-            "url": req.url,
-            "page_content": req.page_content,
-            "organization_description": req.organization_description,
-            "primary_user_tasks": req.primary_user_tasks,
-            "known_concerns": req.known_concerns,
-            "screenshots": _validate_screenshots(req.screenshots),
-        }
-        report = await run_evaluation(client, MODEL, inputs)
-        return report
-    except (EvaluationError, ValueError) as e:
-        # Validation/fetch failures spend few-to-no tokens — release the slot.
-        _last_request.pop(ip, None)
-        return JSONResponse(status_code=400, content={"error": str(e)})
-    except Exception as e:  # last-resort guard
-        _last_request.pop(ip, None)
-        return JSONResponse(status_code=500,
-                            content={"error": f"Unexpected error: {e}"})
+    _prune_jobs()
+    job_id = uuid.uuid4().hex
+    _jobs[job_id] = {"status": "running", "created": now, "ip": ip}
+    inputs = {
+        "url": req.url,
+        "page_content": req.page_content,
+        "organization_description": req.organization_description,
+        "primary_user_tasks": req.primary_user_tasks,
+        "known_concerns": req.known_concerns,
+        "screenshots": screenshots,
+    }
+    asyncio.create_task(_run_job(job_id, inputs))
+    return JSONResponse(status_code=202, content={"job_id": job_id})
+
+
+@app.get("/api/analyze/{job_id}")
+async def api_analyze_status(job_id: str):
+    job = _jobs.get(job_id)
+    if job is None:
+        return JSONResponse(status_code=404,
+                            content={"error": "Unknown or expired job."})
+    if job["status"] == "running":
+        return {"status": "running"}
+    if job["status"] == "error":
+        return {"status": "error", "error": job["error"]}
+    return {"status": "done", "report": job["report"]}
 
 
 @app.get("/api/health")

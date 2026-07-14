@@ -139,3 +139,23 @@ button:disabled { opacity: 0.55; cursor: default; }
   .cols { grid-template-columns: 1fr; }
   .form { flex-direction: column; }
 }
+
+/* --- v2: staged-evaluation UI additions --- */
+.form-col { display: flex; flex-direction: column; gap: 10px; }
+.ctx { border: 1px solid var(--border, #333); border-radius: 10px; padding: 10px 14px; }
+.ctx summary { cursor: pointer; color: var(--muted, #888); font-size: 14px; }
+.ctx label { display: block; margin: 12px 0 4px; font-size: 13px; color: var(--muted, #888); }
+.ctx textarea, .ctx input[type="file"] { width: 100%; margin-top: 4px; font: inherit;
+  background: transparent; color: inherit; border: 1px solid var(--border, #333);
+  border-radius: 8px; padding: 8px; box-sizing: border-box; }
+.foot { margin: 40px 0 20px; color: var(--muted, #888); font-size: 12px; text-align: center; }
+.sev { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px;
+  font-weight: 600; margin: 2px; }
+.sev-critical { background: #7f1d1d; color: #fecaca; }
+.sev-high { background: #9a3412; color: #fed7aa; }
+.sev-medium { background: #854d0e; color: #fef08a; }
+.sev-low { background: #14532d; color: #bbf7d0; }
+.sev-validate { background: #1e3a8a; color: #bfdbfe; }
+.sev-row { line-height: 2; }
+.prio-title { margin: 18px 0 8px; }
+.finding-card { border-left: 3px solid var(--border, #333); }

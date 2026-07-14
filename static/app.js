@@ -5,22 +5,34 @@ const urlInput = document.getElementById("url");
 const submitBtn = document.getElementById("submit");
 const statusEl = document.getElementById("status");
 const resultsEl = document.getElementById("results");
+const shotsInput = document.getElementById("shots");
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const url = urlInput.value.trim();
-  if (!url) return;
+  const body = {
+    url: url || null,
+    organization_description: val("org"),
+    primary_user_tasks: val("tasks"),
+    known_concerns: val("concerns"),
+    page_content: val("content"),
+    screenshots: await readShots(),
+  };
+  if (!body.url && !body.page_content && (!body.screenshots || !body.screenshots.length)) {
+    setStatus("Provide a URL, screenshots, or page content.", true);
+    return;
+  }
 
   setBusy(true);
   resultsEl.hidden = true;
   resultsEl.innerHTML = "";
-  setStatus("Fetching the page and asking Claude to review it… this can take 20–40s.", false);
+  setStatus("Running the staged evaluation (evidence → assessment → recommendations → report)… this typically takes 1–3 minutes.", false);
 
   try {
     const res = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Something went wrong.");
@@ -33,9 +45,32 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
+function val(id) {
+  const v = document.getElementById(id).value.trim();
+  return v || null;
+}
+
+async function readShots() {
+  const files = Array.from(shotsInput.files || []).slice(0, 3);
+  const out = [];
+  for (const f of files) {
+    if (f.size > 4 * 1024 * 1024) {
+      throw new Error(`Screenshot "${f.name}" is over 4 MB.`);
+    }
+    const b64 = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1]);
+      r.onerror = reject;
+      r.readAsDataURL(f);
+    });
+    out.push({ media_type: f.type || "image/png", data: b64 });
+  }
+  return out;
+}
+
 function setBusy(busy) {
   submitBtn.disabled = busy;
-  submitBtn.textContent = busy ? "Analyzing…" : "Analyze";
+  submitBtn.textContent = busy ? "Evaluating…" : "Evaluate";
 }
 
 function setStatus(msg, isError) {
@@ -55,59 +90,117 @@ function list(items, ordered) {
   return `<${tag}>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</${tag}>`;
 }
 
+function sevClass(sev) {
+  const v = String(sev || "").toLowerCase();
+  if (v.startsWith("critical")) return "sev-critical";
+  if (v.startsWith("high")) return "sev-high";
+  if (v.startsWith("medium")) return "sev-medium";
+  if (v.startsWith("low")) return "sev-low";
+  return "sev-validate";
+}
+
 function confClass(c) {
   const v = String(c || "").toLowerCase();
   if (v.startsWith("high")) return "high";
   if (v.startsWith("med")) return "medium";
-  if (v.startsWith("low")) return "low";
-  return "";
+  return "low";
 }
 
 function render(d) {
-  const pct = Math.max(0, Math.min(100, Number(d.overall_score) || 0));
-  const metrics = (d.metric_order || Object.keys(d.metrics || {}))
-    .map((k) => ({ key: k, ...(d.metrics[k] || {}) }));
+  const ex = d.executive_summary || {};
+  const score = d.overall_ux_score || {};
+  const pct10 = score.score == null ? 0 : Math.max(0, Math.min(100, score.score * 10));
 
-  const metricCards = metrics.map((m) => {
-    const score = m.score == null ? "–" : m.score;
-    const barPct = m.score == null ? 0 : (m.score / 10) * 100;
-    const cc = confClass(m.confidence);
-    return `
+  const dimRows = (d.dimension_scores || []).map((r) => `
+    <article class="metric">
+      <div class="metric-top">
+        <div class="metric-name">${esc(r.label)}<span class="weight">${esc(r.weight)}%</span></div>
+        <div class="metric-score">${r.score == null ? "Validation Needed" : esc(r.score)}${r.score == null ? "" : '<span style="font-size:13px;color:var(--muted)">/10 — ' + esc(r.band) + "</span>"}</div>
+      </div>
+      <div class="bar"><i style="width:${r.score == null ? 0 : r.score * 10}%"></i></div>
+      ${r.strengths && r.strengths.length ? `<ul class="evidence">${r.strengths.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+      <p class="conf-reason">${r.concern_count} finding${r.concern_count === 1 ? "" : "s"}${r.insufficient_evidence ? " — insufficient evidence for a score" : ""}</p>
+    </article>`).join("");
+
+  const findings = (d.detailed_findings || []).map((f) => `
+    <article class="metric finding-card">
+      <div class="metric-top">
+        <div class="metric-name">${esc(f.id)} · ${esc(f.dimension)}</div>
+        <div><span class="sev ${sevClass(f.severity)}">${esc(f.severity)}</span></div>
+      </div>
+      <p class="finding">${esc(f.finding)}</p>
+      <p class="conf-reason"><strong>Evidence:</strong> ${esc(f.supporting_evidence)}</p>
+      <p class="conf-reason"><strong>User impact:</strong> ${esc(f.user_impact)}</p>
+      <span class="conf ${confClass(f.confidence_level)}"><span class="dot"></span>
+        Confidence: ${esc(f.confidence_level)} (${esc(f.confidence_percentage)}%)</span>
+      <p class="conf-reason">${esc(f.confidence_justification)}</p>
+      <p class="conf-reason">→ Recommendation ${esc(f.recommendation_ref)}</p>
+    </article>`).join("");
+
+  const recBlock = (label, recs) => !recs || !recs.length ? "" : `
+    <h4 class="prio-title">${esc(label)} — ${esc((recs[0] || {}).priority_meaning || "")}</h4>
+    ${recs.map((r) => `
       <article class="metric">
         <div class="metric-top">
-          <div class="metric-name">${esc(m.label || m.key)}<span class="weight">${esc(m.weight)}%</span></div>
-          <div class="metric-score">${esc(score)}<span style="font-size:13px;color:var(--muted)">/10</span></div>
+          <div class="metric-name">${esc(r.id)} · ${esc(r.dimension)}${r.is_investigation ? ' · <em>investigation</em>' : ""}</div>
+          <div class="weight">Effort: ${esc(r.estimated_effort)}</div>
         </div>
-        <div class="bar"><i style="width:${barPct}%"></i></div>
-        <p class="finding">${esc(m.finding)}</p>
-        <span class="conf ${cc}"><span class="dot"></span>Confidence: ${esc(m.confidence || "—")}</span>
-        ${m.confidence_reason ? `<p class="conf-reason">${esc(m.confidence_reason)}</p>` : ""}
-        ${Array.isArray(m.evidence) && m.evidence.length
-          ? `<ul class="evidence">${m.evidence.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`
-          : ""}
-      </article>`;
-  }).join("");
+        <p class="finding">${esc(r.recommendation)}</p>
+        <p class="conf-reason"><strong>Why:</strong> ${esc(r.reasoning)}</p>
+        <p class="conf-reason"><strong>Expected benefit:</strong> ${esc(r.expected_user_benefit)}</p>
+        <p class="conf-reason">For finding ${esc(r.related_finding)}</p>
+      </article>`).join("")}`;
+
+  const recs = d.prioritized_recommendations || {};
+  const validation = (d.validation_requirements || []).map((v) =>
+    `<li><strong>${esc(v.label)}</strong>: ${esc(v.finding)} <span class="weight">(${esc(v.finding_id)})</span></li>`).join("");
+
+  const sevSummary = Object.entries(d.severity_summary || {})
+    .map(([k, n]) => `<span class="sev ${sevClass(k)}">${esc(k)}: ${n}</span>`).join(" ");
 
   resultsEl.innerHTML = `
     <div class="overall">
-      <div class="score-ring" style="--pct:${pct}"><span>${pct}</span></div>
+      <div class="score-ring" style="--pct:${pct10}"><span>${score.score == null ? "—" : esc(score.score)}</span></div>
       <div class="overall-meta">
-        <h2>Overall UX Score</h2>
-        ${d.summary ? `<p class="summary">${esc(d.summary)}</p>` : ""}
-        <p class="url">${esc(d.title ? d.title + " — " : "")}${esc(d.url)}</p>
+        <h2>${esc(score.display || "Overall UX Score")}</h2>
+        ${ex.overall_assessment ? `<p class="summary">${esc(ex.overall_assessment)}</p>` : ""}
+        <p class="url">${esc((d.meta || {}).page_title ? d.meta.page_title + " — " : "")}${esc(ex.website_reviewed || "")}</p>
       </div>
     </div>
 
-    <div class="cols">
-      <div class="panel"><h3>Strengths</h3>${list(d.strengths, false)}</div>
-      <div class="panel"><h3>Issues</h3>${list(d.issues, false)}</div>
+    <div class="panel"><h3>Executive Summary</h3>
+      ${String(ex.text || "").split(/\n\n+/).map((p) => `<p class="finding">${esc(p)}</p>`).join("")}
+      ${list(ex.key_observations, false)}
     </div>
 
-    <h3 class="section-title">Metric breakdown</h3>
-    ${metricCards}
+    <div class="cols">
+      <div class="panel"><h3>Evaluation Scope</h3>${list((d.evaluation_scope || {}).evidence_supplied, false)}
+        <p class="conf-reason">${esc((d.evaluation_scope || {}).scope_of_review || "")}</p></div>
+      <div class="panel"><h3>Severity Summary</h3><p class="sev-row">${sevSummary || "No findings."}</p>
+        <p class="conf-reason">${esc(score.interpretation || "")}</p></div>
+    </div>
 
-    <h3 class="section-title">Recommendations</h3>
-    <div class="recs">${list(d.recommendations, true)}</div>
+    <h3 class="section-title">Dimension Scores</h3>
+    ${dimRows}
+
+    <h3 class="section-title">Detailed Findings (${(d.detailed_findings || []).length})</h3>
+    ${findings || "<p class='conf-reason'>No usability concerns were identified from the available evidence.</p>"}
+
+    <h3 class="section-title">Prioritized Recommendations</h3>
+    ${recBlock("Priority 1", recs["Priority 1"])}
+    ${recBlock("Priority 2", recs["Priority 2"])}
+    ${recBlock("Priority 3", recs["Priority 3"])}
+
+    <div class="cols">
+      <div class="panel"><h3>Validation Requirements</h3>
+        ${validation ? `<ul>${validation}</ul>` : "<p class='conf-reason'>None flagged.</p>"}</div>
+      <div class="panel"><h3>Evaluation Limitations</h3>${list(d.evaluation_limitations, false)}</div>
+    </div>
+
+    <div class="panel"><h3>Conclusion</h3>
+      <p class="finding">${esc((d.conclusion || {}).text || "")}</p>
+      ${list((d.conclusion || {}).next_steps, true)}
+    </div>
   `;
   resultsEl.hidden = false;
 }

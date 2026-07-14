@@ -3,32 +3,59 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>UX Research - Review Assistant</title>
+  <title>AI-Assisted UX Evaluation</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <main class="wrap">
     <header class="head">
-      <h1>UX Research - Review Assistant</h1>
-      <p class="sub">Enter a URL. Claude scores it against 8 UX heuristics with confidence-rated evidence.</p>
+      <h1>AI-Assisted UX Evaluation</h1>
+      <p class="sub">Structured heuristic review across 8 weighted UX dimensions —
+        evidence-based findings with severity, confidence, and prioritized
+        recommendations. Weak evidence is flagged for human validation, never
+        asserted.</p>
     </header>
 
-    <form id="form" class="form" autocomplete="off">
-      <input
-        id="url"
-        name="url"
-        type="text"
-        inputmode="url"
-        placeholder="example.com"
-        aria-label="Website URL"
-        required
-      />
-      <button id="submit" type="submit">Analyze</button>
+    <form id="form" class="form-col" autocomplete="off">
+      <div class="form">
+        <input id="url" name="url" type="text" inputmode="url"
+               placeholder="example.com" aria-label="Website URL" />
+        <button id="submit" type="submit">Evaluate</button>
+      </div>
+
+      <details class="ctx">
+        <summary>Optional context &amp; evidence (improves the evaluation)</summary>
+        <label>Screenshots (up to 3 — primary evidence for the visual dimensions)
+          <input id="shots" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+        </label>
+        <label>Organization description
+          <textarea id="org" rows="2" maxlength="4000"
+            placeholder="e.g. Small nonprofit offering community health services"></textarea>
+        </label>
+        <label>Primary user tasks
+          <textarea id="tasks" rows="2" maxlength="4000"
+            placeholder="e.g. Find clinic hours; book an appointment; donate"></textarea>
+        </label>
+        <label>Known concerns
+          <textarea id="concerns" rows="2" maxlength="4000"
+            placeholder="e.g. Users report they can't find the pricing page"></textarea>
+        </label>
+        <label>Page content (paste text if the page can't be fetched)
+          <textarea id="content" rows="3" maxlength="40000"
+            placeholder="Optional: paste page text/HTML here"></textarea>
+        </label>
+      </details>
     </form>
 
     <p id="status" class="status" role="status" aria-live="polite"></p>
 
     <section id="results" class="results" hidden></section>
+
+    <footer class="foot">
+      <p>AI-assisted heuristic evaluation — findings require human review before
+        action. No analytics, user testing, or accessibility conformance testing
+        is performed.</p>
+    </footer>
   </main>
 
   <script src="/app.js"></script>

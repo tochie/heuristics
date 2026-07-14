@@ -1,5 +1,5 @@
 ---
-title: UX Research - Review Assistant
+title: AI-Assisted UX Evaluation
 emoji: 🔎
 colorFrom: yellow
 colorTo: gray
@@ -8,89 +8,55 @@ app_port: 7860
 pinned: false
 ---
 
-# UX Research - Review Assistant (demo)
+# AI-Assisted UX Evaluation System
 
-A minimal web app: enter a website URL, and Claude reviews it against
-a fixed UX heuristic rubric — returning per-metric scores, confidence-rated
-evidence, an overall weighted score, strengths, issues, and recommendations.
+Structured heuristic UX evaluation of a web page using a staged, five-module
+AI workflow (spec set in `../docs`, design decisions in
+`../memory/ux-eval-system-knowledge.md`). Built with **FastAPI** + the
+official **Anthropic SDK**. Human judgment stays central: weak evidence is
+flagged for validation, never asserted.
 
-Built with **FastAPI** (async) + the official **Anthropic SDK**.
+## The pipeline (one POST /api/analyze)
 
-## What it scores
+1. **Evidence gathering** — fetch + clean the page HTML (SSRF-guarded), plus
+   optional screenshots (vision), pasted content, and org/task context.
+2. **Module 2 — Evidence Analysis**: all 8 dimensions, preliminary 1–10
+   scores, strengths, concerns with observable evidence (no severity here).
+3. **Module 3 — Finding Assessment**: independent severity + confidence
+   (level + %) + user impact per finding.
+4. **Module 4 — Recommendations**: one evidence-based rec per finding with
+   effort (Low/Med/High) and priority (1–3); investigation recs for
+   Validation-Needed findings.
+5. **Module 5 — Report narrative** (prose only) + deterministic server-side
+   assembly of the 10-section report — scores, roll-ups, and finding↔rec
+   links are computed in code, never by the model.
 
-8 weighted heuristics (grounded in Nielsen's heuristics, Laws of UX, and WCAG):
+Module 1 (methodology, scales, constraints) is the shared, prompt-cached
+system prompt for every call. Temperature 0, structured output via tool-use.
 
-| Metric | Weight |
-|---|---|
-| Navigation Clarity | 20% |
-| Visual Hierarchy | 15% |
-| Consistency & Standards | 15% |
-| Feedback & System Visibility | 10% |
-| Error Prevention & Recovery | 10% |
-| Accessibility & Readability | 10% |
-| Task Efficiency | 10% |
-| Trust & Credibility | 10% |
+## The framework
 
-Each finding carries a **Confidence** rating (High / Medium / Low) with evidence.
-Confidence is metadata about the finding — it is **not** folded into the UX score.
-The app deliberately avoids participant-only metrics (NPS, SUS, satisfaction).
+8 weighted dimensions (Navigation 20%, Visual Hierarchy 15%, Consistency 15%,
+Feedback 10%, Error Prevention 10%, Accessibility 10%, Task Efficiency 10%,
+Trust 10%) · scores 1–10 with bands · severity Critical/High/Medium/Low/
+Validation Needed · confidence High (80–95%) / Medium (60–79%) / Low (30–59%).
+No analytics, satisfaction, or WCAG-conformance claims — out-of-scope
+conclusions are flagged for human validation. Without screenshots, purely
+visual judgments are capped or flagged rather than asserted.
 
-## Setup
+## Run locally
 
-1. Create a virtual environment and install dependencies:
-
-   ```bash
-   cd /Volumes/T7/dev/ijeonu/anthropic
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-2. Add your API key:
-
-   ```bash
-   cp .env.example .env
-   # then edit .env and paste your ANTHROPIC_API_KEY
-   ```
-
-3. Run the server:
-
-   ```bash
-   uvicorn main:app --reload --port 8000
-   # or: python3 main.py
-   ```
-
-4. Open http://localhost:8000 and paste a URL.
-
-   Interactive API docs are auto-generated at http://localhost:8000/docs.
-
-## How it works
-
-```
-browser ──POST /api/analyze {url}──> main.py (FastAPI)
-                                       └─ analyzer.fetch_page()  (httpx fetches + cleans HTML)
-                                       └─ analyzer.build_prompt() (rubric + cleaned HTML)
-                                       └─ analyzer.call_claude()  (AsyncAnthropic SDK)
-                                       └─ weighted overall computed server-side
-browser <────────── analysis JSON ─────┘
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+.venv/bin/python main.py           # http://localhost:8000
 ```
 
-The API key stays server-side and is never exposed to the browser. The page's
-HTML is fetched server-side, scripts/styles stripped (structure + attributes
-like `alt`, `aria-label`, `href` preserved), truncated, and sent to Claude.
+Tests (offline, no API key): `python -m pytest test_report.py -q`
 
-## Files
+## Config (env)
 
-- `main.py` — FastAPI app; serves the frontend and `/api/analyze`
-- `analyzer.py` — async fetch, prompt, Claude call, parse, scoring
-- `rubric.py` — the 8 metrics, weights, confidence rules, weighted-average math
-- `static/` — the single-page frontend (`index.html`, `style.css`, `app.js`)
-- `requirements.txt` — Python dependencies
-
-## Notes / limits
-
-- HTML-only review: it reasons from page source, so visual-only signals (true
-  color contrast, rendered screenshots) are inferred, not measured — which is
-  exactly why findings are confidence-tagged.
-- JS-only single-page apps that render nothing in initial HTML will return thin
-  results; the app warns when the page yields almost no readable HTML.
+- `ANTHROPIC_API_KEY` (required) — server-side only
+- `MODEL` (default `claude-haiku-4-5`)
+- `RATE_LIMIT_SECONDS` (default 300 — one evaluation per visitor per 5 min)
+- `ANALYSIS_ENABLED` (set `false` to pause the public demo without redeploy)
